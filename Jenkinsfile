@@ -15,7 +15,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                sh 'pip install flask pytest'
+                sh 'pip install flask pytest --break-system-packages'
                 sh 'pytest'
             }
         }
