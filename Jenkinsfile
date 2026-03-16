@@ -1,17 +1,46 @@
 pipeline {
     agent any
 
+    environment {
+        DOCKERHUB_USER = 'angelmolinavega'
+        APP_NAME = 'proyecto-ci-cd-angelmolinavega'
+    }
+
     stages {
         stage('Clone') {
             steps {
-                // Aquí irá el código para descargar el proyecto
-                echo 'Clonando el proyecto...'
+                checkout scm
             }
         }
+
         stage('Test') {
             steps {
-                // Aquí instalaremos Flask y Pytest
-                echo 'Ejecutando pruebas...'
+                sh 'pip install flask pytest'
+                sh 'pytest'
+            }
+        }
+
+        stage('Build Image') {
+            steps {
+                sh "docker build -t ${DOCKERHUB_USER}/${APP_NAME}:${env.BUILD_ID} ."
+                sh "docker build -t ${DOCKERHUB_USER}/${APP_NAME}:latest ."
+            }
+        }
+
+        stage('DockerHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
+                    sh "docker push ${DOCKERHUB_USER}/${APP_NAME}:${env.BUILD_ID}"
+                    sh "docker push ${DOCKERHUB_USER}/${APP_NAME}:latest"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh 'kubectl apply -f deployment.yaml'
+                sh 'kubectl apply -f service.yaml'
             }
         }
     }
