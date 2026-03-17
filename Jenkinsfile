@@ -2,46 +2,58 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = 'angelmolinavega'
-        APP_NAME = 'proyecto-ci-cd-angelmolinavega'
+        DOCKER_USER = 'angelmolinavega'
+        IMAGE_NAME = 'python-app'
+        DOCKER_CREDS_ID = 'dockerhub-creds'
+        // Forzamos a kubectl a usar la configuración de la carpeta de Jenkins
+        KUBECONFIG = '/var/lib/jenkins/.kube/config'
     }
 
     stages {
         stage('Clone') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/AngelMolinaVega/proyecto-ci-cd-angelmolinavega.git'
             }
         }
 
         stage('Test') {
             steps {
                 sh 'pip install flask pytest --break-system-packages'
-                sh 'pytest'
+                sh 'python3 -m pytest test_app.py'
             }
         }
 
         stage('Build Image') {
             steps {
-                sh "docker build -t ${DOCKERHUB_USER}/${APP_NAME}:${env.BUILD_ID} ."
-                sh "docker build -t ${DOCKERHUB_USER}/${APP_NAME}:latest ."
+                sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:latest ."
             }
         }
 
         stage('DockerHub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
-                    sh "docker push ${DOCKERHUB_USER}/${APP_NAME}:${env.BUILD_ID}"
-                    sh "docker push ${DOCKERHUB_USER}/${APP_NAME}:latest"
+                withCredentials([string(credentialsId: "${DOCKER_CREDS_ID}", variable: 'DOCKER_PASS')]) {
+                    sh "echo \$DOCKER_PASS | docker login -u ${DOCKER_USER} --password-stdin"
+                    sh "docker push ${DOCKER_USER}/${IMAGE_NAME}:latest"
                 }
             }
         }
 
         stage('Deploy') {
             steps {
-                sh 'kubectl apply -f deployment.yaml'
-                sh 'kubectl apply -f service.yaml'
+                // Usamos --validate=false por si hay problemas de conexión con la API de validación
+                sh "kubectl apply -f deployment.yaml --validate=false"
+                sh "kubectl apply -f service.yaml --validate=false"
+                sh "kubectl rollout restart deployment/${IMAGE_NAME}"
             }
+        }
+    }
+
+    post {
+        success {
+            echo '¡Pipeline completado con éxito! La aplicación está desplegada.'
+        }
+        failure {
+            echo 'El Pipeline ha fallado. Revisa los logs de la etapa correspondiente.'
         }
     }
 }
